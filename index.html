@@ -162,7 +162,6 @@
       color: var(--text-muted);
     }
 
-    /* 檔案列與清空按鈕列 */
     .file-header {
       display: flex;
       justify-content: space-between;
@@ -209,6 +208,11 @@
       align-items: center;
       gap: 8px;
       color: #2d3748;
+    }
+
+    .file-chip .file-size-tag {
+      font-size: 11px;
+      color: var(--text-muted);
     }
 
     .file-chip .remove-btn {
@@ -405,7 +409,7 @@
       <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
         <div class="dropzone-icon">📁</div>
         <p>點擊選取或將檔案直接拖曳至此處</p>
-        <span>支援 PDF、PNG、JPG、CSV、TXT 等文件（可同時上傳多份文件進行對比）</span>
+        <span>支援 PDF、PNG、JPG、CSV、TXT 等文件（單檔建議 &le; 10 MB，總計 &le; 20 MB）</span>
         <input type="file" id="fileInput" multiple style="display: none;" onchange="handleFileSelect(event)">
       </div>
 
@@ -444,6 +448,10 @@
 
   <script>
     const WORKER_URL = "https://gemini-translator-proxy.wandering-poetry-ecb7.workers.dev";
+
+    // 傳輸容量保護上限（防呆機制）
+    const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024; // 單檔 10 MB
+    const MAX_TOTAL_SIZE = 20 * 1024 * 1024;       // 總計 20 MB
 
     let currentMode = 'translate';
     let uploadedFiles = [];
@@ -556,13 +564,27 @@
     }
 
     async function handleFiles(files) {
+      let currentTotalSize = uploadedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+
       for (const file of files) {
+        if (file.size > MAX_SINGLE_FILE_SIZE) {
+          alert(`檔案「${file.name}」容量為 ${(file.size / (1024 * 1024)).toFixed(1)} MB，已超過 10 MB 單檔上限，請壓縮後再上傳。`);
+          continue;
+        }
+
+        if (currentTotalSize + file.size > MAX_TOTAL_SIZE) {
+          alert(`附加檔案總容量已達 ${(currentTotalSize / (1024 * 1024)).toFixed(1)} MB，超過 20 MB 批次上限，停止加入後續檔案。`);
+          break;
+        }
+
         const base64Data = await fileToBase64(file);
         uploadedFiles.push({
           name: file.name,
+          size: file.size,
           mimeType: file.type || 'application/octet-stream',
           data: base64Data
         });
+        currentTotalSize += file.size;
       }
       renderFileList();
     }
@@ -574,6 +596,14 @@
         reader.onerror = error => reject(error);
         reader.readAsDataURL(file);
       });
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
     }
 
     function renderFileList() {
@@ -588,14 +618,16 @@
         return;
       }
 
+      const totalSize = uploadedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
       headerEl.style.display = 'flex';
-      countEl.innerText = `已附加 ${uploadedFiles.length} 個檔案`;
+      countEl.innerText = `已附加 ${uploadedFiles.length} 個檔案（共 ${formatBytes(totalSize)}）`;
 
       uploadedFiles.forEach((file, index) => {
         const chip = document.createElement('div');
         chip.className = 'file-chip';
         chip.innerHTML = `
           <span>📄 ${file.name}</span>
+          <span class="file-size-tag">(${formatBytes(file.size)})</span>
           <button type="button" class="remove-btn" onclick="removeFile(${index})">&times;</button>
         `;
         listEl.appendChild(chip);
@@ -604,14 +636,12 @@
 
     function removeFile(index) {
       uploadedFiles.splice(index, 1);
-      // 若檔案全數移除，清空原生 input 以便再次選取相同檔案
       if (uploadedFiles.length === 0) {
         document.getElementById('fileInput').value = '';
       }
       renderFileList();
     }
 
-    // 一鍵清空所有附加檔案
     function clearAllFiles() {
       uploadedFiles = [];
       document.getElementById('fileInput').value = '';

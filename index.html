@@ -15,6 +15,7 @@
       --text-muted: #5f6368;
       --shadow-sm: 0 1px 3px rgba(60,64,67, 0.12), 0 1px 2px rgba(60,64,67, 0.08);
       --danger: #d93025;
+      --danger-hover: #b3261e;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -159,6 +160,36 @@
     .dropzone span {
       font-size: 12px;
       color: var(--text-muted);
+    }
+
+    /* 檔案列與清空按鈕列 */
+    .file-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .file-count {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .clear-files-btn {
+      background: none;
+      border: none;
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+
+    .clear-files-btn:hover {
+      background: #fce8e6;
     }
 
     .file-list {
@@ -378,6 +409,11 @@
         <input type="file" id="fileInput" multiple style="display: none;" onchange="handleFileSelect(event)">
       </div>
 
+      <!-- 附加檔案清單與一鍵清空按鈕列 -->
+      <div class="file-header" id="fileHeader" style="display: none;">
+        <span class="file-count" id="fileCountText">已附加 0 個檔案</span>
+        <button type="button" class="clear-files-btn" onclick="clearAllFiles()">✕ 清空全部檔案</button>
+      </div>
       <div class="file-list" id="fileList"></div>
 
       <label for="analysisPromptInput">您的中文指令與訴求（選填）：</label>
@@ -412,7 +448,6 @@
     let currentMode = 'translate';
     let uploadedFiles = [];
 
-    // 快取「中文直譯」Option DOM 元素，用於手機端實體移除/掛載
     const optToneLiteralNode = document.getElementById('optToneLiteral');
 
     const DOMAIN_GLOSSARY = {
@@ -473,7 +508,6 @@
         outputLabel.innerText = '英文郵件建議：';
         headerSubtitle.innerText = '專為工程現場與商務溝通設計的精準術語中翻英工具';
         
-        // 手機端相容方案：重新掛載「中文直譯」選項
         if (!document.getElementById('optToneLiteral')) {
           toneSelect.appendChild(optToneLiteralNode);
         }
@@ -486,7 +520,6 @@
         outputLabel.innerText = '文件分析與英文郵件建議：';
         headerSubtitle.innerText = '上傳廠商報價單、規格書或型錄，自動比對細節並草擬專業回信';
         
-        // 手機端相容方案：實體移除「中文直譯」選項，徹底解決行動端原生下拉選單仍可看見的問題
         if (toneSelect.value === 'Literal') {
           toneSelect.value = 'Formal';
         }
@@ -545,13 +578,25 @@
 
     function renderFileList() {
       const listEl = document.getElementById('fileList');
+      const headerEl = document.getElementById('fileHeader');
+      const countEl = document.getElementById('fileCountText');
+
       listEl.innerHTML = '';
+
+      if (uploadedFiles.length === 0) {
+        headerEl.style.display = 'none';
+        return;
+      }
+
+      headerEl.style.display = 'flex';
+      countEl.innerText = `已附加 ${uploadedFiles.length} 個檔案`;
+
       uploadedFiles.forEach((file, index) => {
         const chip = document.createElement('div');
         chip.className = 'file-chip';
         chip.innerHTML = `
           <span>📄 ${file.name}</span>
-          <button class="remove-btn" onclick="removeFile(${index})">&times;</button>
+          <button type="button" class="remove-btn" onclick="removeFile(${index})">&times;</button>
         `;
         listEl.appendChild(chip);
       });
@@ -559,6 +604,17 @@
 
     function removeFile(index) {
       uploadedFiles.splice(index, 1);
+      // 若檔案全數移除，清空原生 input 以便再次選取相同檔案
+      if (uploadedFiles.length === 0) {
+        document.getElementById('fileInput').value = '';
+      }
+      renderFileList();
+    }
+
+    // 一鍵清空所有附加檔案
+    function clearAllFiles() {
+      uploadedFiles = [];
+      document.getElementById('fileInput').value = '';
       renderFileList();
     }
 
@@ -626,14 +682,12 @@ ${text}
         `.trim();
 
       } else {
-        // 文件分析模式
         const userPrompt = document.getElementById('analysisPromptInput').value.trim();
         if (!userPrompt && uploadedFiles.length === 0) {
           alert('請至少上傳一份文件或輸入您的分析/信件撰寫指令');
           return;
         }
 
-        // 動態判定預設指令：若使用者未輸入指令，依據上傳檔案數量套用專業預設
         let effectivePrompt = userPrompt;
         if (!effectivePrompt) {
           if (uploadedFiles.length === 1) {

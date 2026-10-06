@@ -331,12 +331,12 @@
       <button class="tab-btn" id="tabDocAnalysis" onclick="switchMode('analysis')">文件分析</button>
     </div>
 
-    <!-- 全域控制設定（專業領域、語氣設定、發信心情） -->
+    <!-- 全域控制設定 -->
     <div class="controls">
       <div>
         <label for="categorySelect">專業領域類別：</label>
         <select id="categorySelect">
-          <option value="General">日常生活 (General)</option>
+          <option value="General">日常生活</option>
           <option value="Electrical">電機工程 (Electrical)</option>
           <option value="Instrumentation">儀表控制 (Instrument)</option>
           <option value="Accounting">會計財務 (Accounting)</option>
@@ -357,6 +357,7 @@
           <option value="Normal">正常 (客觀中立)</option>
           <option value="Happy">愉快 (熱情正面)</option>
           <option value="Angry">嚴正/質詢 (緊迫關注)</option>
+          <option value="Furious">生氣 (吵架模式)</option>
         </select>
       </div>
     </div>
@@ -364,7 +365,7 @@
     <!-- 模式 1：中翻英 介面 -->
     <div id="translateModeSection">
       <label for="sourceText">中文信件草稿：</label>
-      <textarea id="sourceText" placeholder="請輸入中文內容，例如：原先這幾項的單位都是攝氏，後來為了符合美國習慣改成華氏，不過經現場實際使用，由於絕大多數表頭單位都為攝氏，因此決定還是改回攝氏，請協助將單位以及敘述改回原本的內容..."></textarea>
+      <textarea id="sourceText" placeholder="請輸入中文草稿，例如：高壓配電盤昨天過載跳脫，更換保護電驛並完成回路測試後已正常送電，請廠商本週五前提供正式檢測報告以利歸檔..."></textarea>
     </div>
 
     <!-- 模式 2：文件分析 介面 -->
@@ -379,8 +380,8 @@
 
       <div class="file-list" id="fileList"></div>
 
-      <label for="analysisPromptInput">您的中文指令與訴求（選填，若未填寫則預設為分析差異並提出問題）：</label>
-      <textarea id="analysisPromptInput" placeholder="留空時系統預設為：請詳細分析此兩份文件/報價單之差異，並針對新版變更或漲價部分向廠商提出具體問題..."></textarea>
+      <label for="analysisPromptInput">您的中文指令與訴求（選填）：</label>
+      <textarea id="analysisPromptInput" placeholder="選填。留空時系統將依上傳數量自動判定：單一文件分析其合理性與瑕疵；多份文件則自動比對版次差異並質詢變動處..."></textarea>
     </div>
     
     <div class="disclaimer">
@@ -410,6 +411,9 @@
 
     let currentMode = 'translate';
     let uploadedFiles = [];
+
+    // 快取「中文直譯」Option DOM 元素，用於手機端實體移除/掛載
+    const optToneLiteralNode = document.getElementById('optToneLiteral');
 
     const DOMAIN_GLOSSARY = {
       General: `日常生活與一般商務慣用語：著重清晰自然、日常溝通、行程協商與生活事務。`,
@@ -445,7 +449,8 @@
     const MOOD_GUIDES = {
       Normal: '情緒客觀平實，中立理性。',
       Happy: '情緒愉快友善，語氣熱情配合。',
-      Angry: '情緒嚴正堅定（Firm & Stern）。在符合職場禮貌前提下，展現問題嚴重性、緊迫感與責任要求。'
+      Angry: '情緒嚴正堅定（Firm & Stern）。在符合職場禮貌前提下，展現問題嚴重性、緊迫感與責任要求。',
+      Furious: '生氣 (吵架模式 / Escalation & Dispute Mode)。語氣極其嚴厲、犀利且充滿強烈火藥味與高壓態勢。不再顧忌維持委婉社交禮儀，直斥對方的嚴重失誤、怠惰或不合理行為，明確警告此事件將升級至最高管理層、重新檢討合作夥伴資格、追究經濟/工程違約賠償責任或全面暫停後續付款。措辭強硬精準且具備法律與商務威懾力。'
     };
 
     function switchMode(mode) {
@@ -458,7 +463,6 @@
       const outputLabel = document.getElementById('outputLabel');
       const headerSubtitle = document.getElementById('headerSubtitle');
       const toneSelect = document.getElementById('toneSelect');
-      const optToneLiteral = document.getElementById('optToneLiteral');
 
       if (mode === 'translate') {
         tabTranslate.classList.add('active');
@@ -469,8 +473,10 @@
         outputLabel.innerText = '英文郵件建議：';
         headerSubtitle.innerText = '專為工程現場與商務溝通設計的精準術語中翻英工具';
         
-        // 恢復顯示「中文直譯」
-        optToneLiteral.style.display = '';
+        // 手機端相容方案：重新掛載「中文直譯」選項
+        if (!document.getElementById('optToneLiteral')) {
+          toneSelect.appendChild(optToneLiteralNode);
+        }
       } else {
         tabTranslate.classList.remove('active');
         tabDocAnalysis.classList.add('active');
@@ -480,10 +486,12 @@
         outputLabel.innerText = '文件分析與英文郵件建議：';
         headerSubtitle.innerText = '上傳廠商報價單、規格書或型錄，自動比對細節並草擬專業回信';
         
-        // 隱藏「中文直譯」選項；若當前選中該項，自動切回「正式禮貌」
-        optToneLiteral.style.display = 'none';
+        // 手機端相容方案：實體移除「中文直譯」選項，徹底解決行動端原生下拉選單仍可看見的問題
         if (toneSelect.value === 'Literal') {
           toneSelect.value = 'Formal';
+        }
+        if (document.getElementById('optToneLiteral')) {
+          toneSelect.removeChild(optToneLiteralNode);
         }
       }
     }
@@ -618,15 +626,22 @@ ${text}
         `.trim();
 
       } else {
+        // 文件分析模式
         const userPrompt = document.getElementById('analysisPromptInput').value.trim();
         if (!userPrompt && uploadedFiles.length === 0) {
           alert('請至少上傳一份文件或輸入您的分析/信件撰寫指令');
           return;
         }
 
-        const effectivePrompt = userPrompt !== ''
-          ? userPrompt
-          : '請詳細比對所附文件/報價單之差異（包含各項型號、單價變動、總價、交期及條款）。針對新版價格上漲、交期拉長或規格不符的部分向廠商提出具體詢問與質疑，並要求廠商提供合理的書面解釋與最新評估。';
+        // 動態判定預設指令：若使用者未輸入指令，依據上傳檔案數量套用專業預設
+        let effectivePrompt = userPrompt;
+        if (!effectivePrompt) {
+          if (uploadedFiles.length === 1) {
+            effectivePrompt = '請詳細分析這份廠商文件/報價單。全面審查其條款、單價合理性、交期長短、規格限制或潛在風險/瑕疵，並擬稿撰寫一封專業英文郵件給廠商，針對不合理或有疑慮之處提出明確質詢並要求說明。';
+          } else {
+            effectivePrompt = '請詳細比對所附的多份文件/報價單，精確分析新舊版本之間的具體差異（包含各品項單價增減、總價變更、交期異動、規格差異及商務條款變動）。擬稿撰寫一封專業英文郵件給廠商，明確列出不同版本之變化並針對變動處提出質詢，要求廠商提供合理的書面解釋。';
+          }
+        }
 
         filesPayload = uploadedFiles;
         promptPayload = `
@@ -643,9 +658,9 @@ ${glossary}
 ${effectivePrompt}
 
 【任務與輸出要求】
-1. 請仔細檢視所有附加的文件（包含報價單單價變更、型號變更、交期條款、規格參數等）。
-2. 若要求比對報價單或文件，請嚴格根據文件真實內容指出差異（如：哪項料號漲價、漲幅多少、交期差異等），嚴禁憑空捏造文件中不存在的數據。
-3. 根據比對結果與核心訴求，撰寫出符合指定領域、語氣與心情的標準英文商務/技術郵件（包含 Subject、稱謂、條理清楚的正文、具體提問或訴求、簽名結尾）。
+1. 請仔細檢視所有附加的文件（包含報價單單價、型號、交期條款、規格參數等）。
+2. 若為單份文件，請客觀指出關鍵問題與風險；若為多份文件，請嚴格根據真實數據條列版本差異，嚴禁憑空捏造文件中不存在的數據。
+3. 根據分析結果與核心訴求，撰寫出符合指定領域、語氣與心情的標準英文商務/技術郵件（包含 Subject、稱謂、條理清楚的正文、具體提問或訴求、簽名結尾）。
 4. 直接輸出信件內容，無須額外的系統說明或閒聊。
         `.trim();
       }

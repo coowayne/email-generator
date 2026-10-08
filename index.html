@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI信件產生工具</title>
+  <!-- 引入輕量級 Markdown 解析庫 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {
       --primary: #1a73e8;
@@ -15,7 +17,6 @@
       --text-muted: #5f6368;
       --shadow-sm: 0 1px 3px rgba(60,64,67, 0.12), 0 1px 2px rgba(60,64,67, 0.08);
       --danger: #d93025;
-      --danger-hover: #b3261e;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -29,7 +30,7 @@
     }
 
     .container {
-      max-width: 900px;
+      max-width: 920px;
       margin: 0 auto;
       background: #ffffff;
       border-radius: 12px;
@@ -302,13 +303,12 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--bg);
-      padding: 20px;
+      padding: 24px;
       min-height: 160px;
-      white-space: pre-wrap;
       font-size: 14px;
       position: relative;
       color: var(--text);
-      line-height: 1.6;
+      line-height: 1.7;
     }
 
     .output-card.active {
@@ -331,6 +331,7 @@
       cursor: pointer;
       box-shadow: 0 1px 2px rgba(0,0,0,0.05);
       transition: background 0.15s, border-color 0.15s;
+      z-index: 2;
     }
 
     .copy-btn:hover {
@@ -349,6 +350,48 @@
       padding: 4px 10px;
       border-radius: 4px;
       font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    /* Markdown 表格與文字渲染樣式 */
+    .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 13.5px;
+      overflow-x: auto;
+      display: block;
+    }
+
+    .markdown-body th, .markdown-body td {
+      border: 1px solid #d0d7de;
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    .markdown-body th {
+      background-color: #f6f8fa;
+      font-weight: 600;
+      color: #24292f;
+    }
+
+    .markdown-body tr:nth-child(even) {
+      background-color: #fcfdfe;
+    }
+
+    .markdown-body p {
+      margin-bottom: 12px;
+    }
+
+    .markdown-body ul, .markdown-body ol {
+      margin-bottom: 12px;
+      padding-left: 20px;
+    }
+
+    .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+      margin-top: 18px;
+      margin-bottom: 10px;
+      font-size: 15px;
+      color: #1e293b;
     }
   </style>
 </head>
@@ -413,7 +456,6 @@
         <input type="file" id="fileInput" multiple style="display: none;" onchange="handleFileSelect(event)">
       </div>
 
-      <!-- 附加檔案清單與一鍵清空按鈕列 -->
       <div class="file-header" id="fileHeader" style="display: none;">
         <span class="file-count" id="fileCountText">已附加 0 個檔案</span>
         <button type="button" class="clear-files-btn" onclick="clearAllFiles()">✕ 清空全部檔案</button>
@@ -440,7 +482,7 @@
       <label id="outputLabel">英文郵件建議：</label>
       <div class="output-card" id="outputCard">
         <button class="copy-btn" id="copyBtn" onclick="copyOutput()" style="display: none;">複製內文</button>
-        <div id="outputContent" style="color: var(--text-muted);">處理結果將呈現於此...</div>
+        <div id="outputContent" class="markdown-body" style="color: var(--text-muted);">處理結果將呈現於此...</div>
       </div>
       <div id="modelBadge" class="model-badge" style="display: none;"></div>
     </div>
@@ -449,12 +491,12 @@
   <script>
     const WORKER_URL = "https://gemini-translator-proxy.wandering-poetry-ecb7.workers.dev";
 
-    // 傳輸容量保護上限（防呆機制）
-    const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024; // 單檔 10 MB
-    const MAX_TOTAL_SIZE = 20 * 1024 * 1024;       // 總計 20 MB
+    const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024;
+    const MAX_TOTAL_SIZE = 20 * 1024 * 1024;
 
     let currentMode = 'translate';
     let uploadedFiles = [];
+    let rawMarkdownText = ''; // 保留 AI 原始文字以便複製
 
     const optToneLiteralNode = document.getElementById('optToneLiteral');
 
@@ -743,9 +785,10 @@ ${effectivePrompt}
 
 【任務與輸出要求】
 1. 請仔細檢視所有附加的文件（包含報價單單價、型號、交期條款、規格參數等）。
-2. 若為單份文件，請客觀指出關鍵問題與風險；若為多份文件，請嚴格根據真實數據條列版本差異，嚴禁憑空捏造文件中不存在的數據。
-3. 根據分析結果與核心訴求，撰寫出符合指定領域、語氣與心情的標準英文商務/技術郵件（包含 Subject、稱謂、條理清楚的正文、具體提問或訴求、簽名結尾）。
-4. 直接輸出信件內容，無須額外的系統說明或閒聊。
+2. 若涉及規格、料號或單價對比，請使用乾淨標準的 Markdown 表格排版，表格下方條列重要疑點。
+3. 嚴格根據真實數據呈現差異，嚴禁憑空捏造文件中不存在的數據。
+4. 根據分析結果與核心訴求，撰寫出符合指定領域、語氣與心情的標準英文商務/技術郵件（包含 Subject、稱謂、條理清楚的正文、具體提問或訴求、簽名結尾）。
+5. 直接輸出信件內容，無須額外的系統說明或閒聊。
         `.trim();
       }
 
@@ -755,7 +798,7 @@ ${effectivePrompt}
       
       outputCard.classList.remove('active');
       outputContent.style.color = 'var(--text-muted)';
-      outputContent.innerText = '正在處理並優化內容...';
+      outputContent.innerHTML = '正在處理並優化內容...';
       copyBtn.style.display = 'none';
       modelBadge.style.display = 'none';
 
@@ -772,9 +815,11 @@ ${effectivePrompt}
         const data = await response.json();
         if (data.error) throw new Error(data.error.message || data.error);
 
-        const generatedText = data.candidates[0].content.parts[0].text;
+        rawMarkdownText = data.candidates[0].content.parts[0].text;
+        
+        // 透過 marked 解析 Markdown（包含 HTML 表格轉換）
         outputContent.style.color = 'var(--text)';
-        outputContent.innerText = generatedText;
+        outputContent.innerHTML = marked.parse(rawMarkdownText);
         outputCard.classList.add('active');
         copyBtn.style.display = 'block';
 
@@ -784,7 +829,7 @@ ${effectivePrompt}
         }
       } catch (err) {
         outputContent.style.color = 'var(--danger)';
-        outputContent.innerText = `發生錯誤: ${err.message}`;
+        outputContent.innerHTML = `發生錯誤: ${err.message}`;
       } finally {
         submitBtn.disabled = false;
         btnSpinner.style.display = 'none';
@@ -792,13 +837,33 @@ ${effectivePrompt}
       }
     }
 
-    function copyOutput() {
-      const text = document.getElementById('outputContent').innerText;
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('copyBtn');
+    // 支援富文字與純文字剪貼簿複製
+    async function copyOutput() {
+      const btn = document.getElementById('copyBtn');
+      const contentEl = document.getElementById('outputContent');
+
+      try {
+        if (navigator.clipboard && window.ClipboardItem) {
+          const blobHtml = new Blob([contentEl.innerHTML], { type: 'text/html' });
+          const blobText = new Blob([rawMarkdownText || contentEl.innerText], { type: 'text/plain' });
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/html': blobHtml,
+              'text/plain': blobText
+            })
+          ]);
+        } else {
+          await navigator.clipboard.writeText(rawMarkdownText || contentEl.innerText);
+        }
         btn.innerText = '已複製！';
         setTimeout(() => { btn.innerText = '複製內文'; }, 2000);
-      });
+      } catch (err) {
+        // Fallback
+        navigator.clipboard.writeText(rawMarkdownText || contentEl.innerText).then(() => {
+          btn.innerText = '已複製！';
+          setTimeout(() => { btn.innerText = '複製內文'; }, 2000);
+        });
+      }
     }
   </script>
 </body>

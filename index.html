@@ -352,14 +352,13 @@
       font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
     }
 
-    /* Markdown 表格與文字渲染樣式 */
+    /* 網頁上呈現的樣式 */
     .markdown-body table {
       width: 100%;
       border-collapse: collapse;
       margin: 16px 0;
       font-size: 13.5px;
-      overflow-x: auto;
-      display: block;
+      border: 1px solid #d0d7de;
     }
 
     .markdown-body th, .markdown-body td {
@@ -496,7 +495,6 @@
 
     let currentMode = 'translate';
     let uploadedFiles = [];
-    let rawMarkdownText = ''; // 保留 AI 原始文字以便複製
 
     const optToneLiteralNode = document.getElementById('optToneLiteral');
 
@@ -690,6 +688,38 @@
       renderFileList();
     }
 
+    // 為所有生成的 table/th/td 自動寫入 Outlook 專用的行內樣式與原生屬性
+    function applyInlineStylesForOutlook(container) {
+      const tables = container.querySelectorAll('table');
+      tables.forEach(table => {
+        table.setAttribute('border', '1');
+        table.setAttribute('cellspacing', '0');
+        table.setAttribute('cellpadding', '6');
+        table.style.borderCollapse = 'collapse';
+        table.style.width = '100%';
+        table.style.border = '1px solid #d0d7de';
+        table.style.margin = '16px 0';
+        table.style.fontFamily = 'Calibri, Arial, sans-serif';
+      });
+
+      const ths = container.querySelectorAll('th');
+      ths.forEach(th => {
+        th.style.border = '1px solid #d0d7de';
+        th.style.backgroundColor = '#f6f8fa';
+        th.style.fontWeight = 'bold';
+        th.style.padding = '8px 12px';
+        th.style.textAlign = 'left';
+        th.style.color = '#24292f';
+      });
+
+      const tds = container.querySelectorAll('td');
+      tds.forEach(td => {
+        td.style.border = '1px solid #d0d7de';
+        td.style.padding = '8px 12px';
+        td.style.textAlign = 'left';
+      });
+    }
+
     async function executeCurrentMode() {
       const category = document.getElementById('categorySelect').value;
       const tone = document.getElementById('toneSelect').value;
@@ -815,11 +845,14 @@ ${effectivePrompt}
         const data = await response.json();
         if (data.error) throw new Error(data.error.message || data.error);
 
-        rawMarkdownText = data.candidates[0].content.parts[0].text;
+        const rawMarkdownText = data.candidates[0].content.parts[0].text;
         
-        // 透過 marked 解析 Markdown（包含 HTML 表格轉換）
         outputContent.style.color = 'var(--text)';
         outputContent.innerHTML = marked.parse(rawMarkdownText);
+        
+        // 渲染完成後注入 Outlook 相容的行內表格樣式
+        applyInlineStylesForOutlook(outputContent);
+
         outputCard.classList.add('active');
         copyBtn.style.display = 'block';
 
@@ -837,32 +870,31 @@ ${effectivePrompt}
       }
     }
 
-    // 支援富文字與純文字剪貼簿複製
-    async function copyOutput() {
+    // 模擬手動反白全選的複製行為，確保寫入剪貼簿時保有完整的 Outlook 表格格式
+    function copyOutput() {
       const btn = document.getElementById('copyBtn');
       const contentEl = document.getElementById('outputContent');
 
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(contentEl);
+      selection.removeAllRanges();
+      selection.addRange(range);
+
       try {
-        if (navigator.clipboard && window.ClipboardItem) {
-          const blobHtml = new Blob([contentEl.innerHTML], { type: 'text/html' });
-          const blobText = new Blob([rawMarkdownText || contentEl.innerText], { type: 'text/plain' });
-          await navigator.clipboard.write([
-            new ClipboardItem({
-              'text/html': blobHtml,
-              'text/plain': blobText
-            })
-          ]);
-        } else {
-          await navigator.clipboard.writeText(rawMarkdownText || contentEl.innerText);
-        }
-        btn.innerText = '已複製！';
-        setTimeout(() => { btn.innerText = '複製內文'; }, 2000);
-      } catch (err) {
-        // Fallback
-        navigator.clipboard.writeText(rawMarkdownText || contentEl.innerText).then(() => {
+        const successful = document.execCommand('copy');
+        if (successful) {
           btn.innerText = '已複製！';
           setTimeout(() => { btn.innerText = '複製內文'; }, 2000);
-        });
+        } else {
+          throw new Error('execCommand copy failed');
+        }
+      } catch (err) {
+        navigator.clipboard.writeText(contentEl.innerText);
+        btn.innerText = '已複製純文字！';
+        setTimeout(() => { btn.innerText = '複製內文'; }, 2000);
+      } finally {
+        selection.removeAllRanges();
       }
     }
   </script>
